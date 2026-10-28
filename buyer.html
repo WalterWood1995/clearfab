@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我是买家 · ClearFab 明造</title>
+<meta name="description" content="拖入零件图，AI 生成 3D 数模，选择材料、数量和工艺，生成询价单发给供应商。">
+<link rel="stylesheet" href="assets/style.css"><link rel="stylesheet" href="assets/flow.css">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<header class="top"><a class="logo" href="index.html"><b>Clear</b>Fab 明造</a><span class="portal">买家</span><span class="spacer"></span><a href="#" id="myRfqs">我的询价单</a><a href="maker.html">切换到供应商</a></header>
+<div class="chat"><div class="msgs" id="msgs"></div></div>
+<div class="composer">
+  <div class="box" id="box"><button id="attach" title="上传文件">＋ 上传</button><input type="text" id="txt" placeholder="把零件图拖到这里，或输入说明…"><button class="primary" id="send">发送</button></div>
+  <input type="file" id="file" hidden accept=".stl,.obj,.step,.stp,.png,.jpg,.jpeg,.webp,.pdf">
+  <div class="hint">支持 3D：STEP / STL / OBJ　·　2D：PDF / PNG / JPG 图纸或手绘草图照片</div>
+</div>
+<script type="module" src="assets/chat-buyer.js"></script>
+</body></html>

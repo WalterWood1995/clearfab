@@ -47,6 +47,6 @@ async function show(c) {
 }
 box.innerHTML = idx.cases.map((c) => `<button data-id="${c.id}">${esc(c.title)} · ${c.qty} 件</button>`).join("");
 box.querySelectorAll("button").forEach((b) => b.onclick = () => show(idx.cases.find((c) => c.id === b.dataset.id)));
-show(idx.cases[0]);
+show(idx.cases.find((c) => c.id === new URLSearchParams(location.search).get("case")) || idx.cases[0]);
 </script>
 </body></html>

@@ -47,7 +47,10 @@ export class Viewer {
   show(name, on) { if (this.layers[name]) this.layers[name].visible = on; }
   async loadSTL(url) {
     const buf = await (await fetch(url)).arrayBuffer();
-    const geo = new STLLoader().parse(buf); geo.computeVertexNormals();
+    return this.setGeometry(new STLLoader().parse(buf));
+  }
+  setGeometry(geo) {
+    geo.computeVertexNormals();
     this.clear("mesh");
     const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xb8c2cc, metalness: 0.35, roughness: 0.55, transparent: true, opacity: 1 }));
     this.layers.mesh = mesh; this.group.add(mesh);

@@ -13,11 +13,20 @@ export const MATERIAL_OPTS = ["铝合金 6061-T6", "铝合金 7075-T6", "不锈�
 export const PAY_OPTS = ["100% 预付", "30% 预付 + 70% 发货前", "30% 预付 + 70% 发货后 30 天", "发货后 30 天", "发货后 60 天", "信用证 L/C 即期", "按里程碑分期"];
 export const INCOTERMS = { EXW: "EXW 工厂交货", FCA: "FCA 货交承运人", DAP: "DAP 目的地交货（不含税）", DDP: "DDP 完税后交货" };
 
-const SAMPLE_META = {
-  bracket: { buyer: "B-0012 · 德国斯图加特 · 自动化设备", address: "70565 Stuttgart, DE（示例）", annual: 600, deadline: "2026-12-15", incoterm: "DAP", pay: "发货后 30 天" },
-  shaft: { buyer: "B-0031 · 德国海尔布隆 · 输送设备", address: "74072 Heilbronn, DE（示例）", annual: 2400, deadline: "2027-01-20", incoterm: "FCA", pay: "发货后 60 天" },
-  pedal_bracket: { buyer: "B-0047 · 捷克布尔诺 · 汽车零部件 Tier 2", address: "602 00 Brno, CZ（示例）", annual: 24000, deadline: "2027-02-28", incoterm: "DDP", pay: "发货后 60 天" },
+const SAMPLE_META = {   // demo buyer profiles (fictional)
+  bracket: { buyer: "B-0012 · 德国斯图加特 · 自动化设备", industry: "自动化设备", rating: { orders: 14, rate: 0.42, paid_on_time: 1.0 }, address: "70565 Stuttgart, DE（示例）", annual: 600, deadline: "2026-12-15", quote_by: "2026-11-10", target: 45, incoterm: "DAP", pay: "发货后 30 天", views: 7 },
+  shaft: { buyer: "B-0031 · 德国海尔布隆 · 输送设备", industry: "输送设备", rating: { orders: 5, rate: 0.31, paid_on_time: 0.96 }, address: "74072 Heilbronn, DE（示例）", annual: 2400, deadline: "2027-01-20", quote_by: "2026-11-15", target: null, incoterm: "FCA", pay: "发货后 60 天", views: 4 },
+  pedal_bracket: { buyer: "B-0047 · 捷克布尔诺 · 汽车零部件 Tier 2", industry: "汽车零部件", rating: { orders: 31, rate: 0.55, paid_on_time: 0.98 }, address: "602 00 Brno, CZ（示例）", annual: 24000, deadline: "2027-02-28", quote_by: "2026-11-20", target: 6.5, incoterm: "DDP", pay: "发货后 60 天", views: 12 },
 };
+
+// Cross-border cost assumptions used to put quotes on one basis (placeholders, to be replaced by real rates)
+export const LANDED = { freightEU: [25, 0.6], freightCNair: [120, 7.0], freightCNsea: [350, 1.6], dutyCN: 0.03 };
+export function freightEstimate(massKgTotal, fromCN) {
+  const kg = massKgTotal * 1.2;
+  if (!fromCN) return LANDED.freightEU[0] + LANDED.freightEU[1] * kg;
+  const air = Math.max(LANDED.freightCNair[0], LANDED.freightCNair[1] * kg) + 90, sea = LANDED.freightCNsea[0] + LANDED.freightCNsea[1] * kg;
+  return Math.min(air, sea);
+}
 
 let samples = null;
 export async function sampleRfqs() {
@@ -28,7 +37,8 @@ export async function sampleRfqs() {
     const m = SAMPLE_META[c.id], e = res.costs.DE.find((x) => x.process === res.recommended);
     return {
       id: `RFQ-26-${101 + i}`, sample: true, caseId: c.id, title: c.title, created: "2026-10-28",
-      buyer: m.buyer, files: { stl: `demo/${c.id}.stl`, step: c.id === "bracket" ? "demo/bracket.step" : null },
+      buyer: m.buyer, industry: m.industry, rating: m.rating, quote_by: m.quote_by, target: m.target, views: m.views,
+      procs: { mill3: ["mill"], turn: ["turn"], sheet: ["sheet"] }[res.recommended] || ["mill"], files: { stl: `demo/${c.id}.stl`, step: c.id === "bracket" ? "demo/bracket.step" : null },
       bbox: res.info.bbox, volume_cm3: res.info.volume_mm3 / 1000, mass_kg: res.fea.mass_kg,
       material: idx.meta.materials[res.req.material].name, qty: res.req.qty, annual: m.annual,
       quality: "ISO 2768-m · Ra 3.2 · 材质证书 EN 10204 3.1", address: m.address, incoterm: m.incoterm, pay: m.pay,
@@ -46,3 +56,14 @@ export async function allRfqs() { return [...localRfqs(), ...(await sampleRfqs()
 export const quotesFor = (id) => read(K_Q).filter((q) => q.rfq === id);
 export function saveQuote(q) { const l = read(K_Q).filter((x) => !(x.rfq === q.rfq && x.maker === q.maker)); l.unshift(q); write(K_Q, l); }
 export const nextRfqId = () => `RFQ-26-${String(201 + localRfqs().length)}`;
+
+// Q&A between supplier and buyer on an RFQ (prototype: this browser only)
+const K_QA = "cf_proto_qa";
+export const questionsFor = (id) => read(K_QA).filter((q) => q.rfq === id);
+export function addQuestion(q) { const l = read(K_QA); l.push(q); write(K_QA, l); }
+export function answerQuestion(i, text) { const l = read(K_QA); if (l[i]) { l[i].answer = text; write(K_QA, l); } }
+export const allQuestions = () => read(K_QA);
+
+export const DENSITY = { "铝": 2.7, "不锈钢": 8.0, "钢": 7.85, "POM": 1.41, "PA6": 1.14, "ABS": 1.05 };
+export const densityOf = (material) => DENSITY[Object.keys(DENSITY).find((k) => material.includes(k))] || 7.85;
+export const daysLeft = (d) => d ? Math.ceil((new Date(d) - new Date()) / 864e5) : null;

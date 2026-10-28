@@ -5,7 +5,7 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { Viewer } from "./viewer.js";
 import { esc, num, eur } from "./common.js";
-import { PROCESS_OPTS, MATERIAL_OPTS, PAY_OPTS, INCOTERMS, saveRfq, nextRfqId, localRfqs, quotesFor, sampleRfqs } from "./store.js";
+import { PROCESS_OPTS, MATERIAL_OPTS, PAY_OPTS, INCOTERMS, saveRfq, nextRfqId, localRfqs, quotesFor, sampleRfqs, freightEstimate, LANDED, questionsFor, allQuestions, answerQuestion, densityOf, daysLeft } from "./store.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const msgs = $("#msgs");
@@ -49,10 +49,13 @@ async function onFile(f, sampleCase = null) {
   if (["png", "jpg", "jpeg", "webp"].includes(ext)) {
     st.drawing = URL.createObjectURL(f);
     say(`<img class="thumb" src="${st.drawing}" alt="">${esc(f.name)}`, "me");
+    if (await aiAvailable()) return aiModel(f);
     return sampleCase ? aiReconstruct(sampleCase) : drawingOnly("图片");
   }
-  if (ext === "pdf") { say(`📄 ${esc(f.name)}`, "me"); return drawingOnly("PDF 图纸"); }
-  if (!["stl", "obj", "step", "stp"].includes(ext)) return say(`暂不支持 .${esc(ext)} 文件。请上传 STEP / STL / OBJ，或 PDF / PNG / JPG 图纸。`);
+  if (ext === "pdf" || ext === "dxf") { st.drawing = true; say(`📄 ${esc(f.name)}`, "me"); return (await aiAvailable()) ? aiModel(f) : drawingOnly(ext === "pdf" ? "PDF 图纸" : "DXF 图纸"); }
+  if (ext === "dwg") return say(`DWG 是 Autodesk 私有格式，网页读不了。请在 CAD 里<b>另存为 DXF</b>（或导出 PDF）再拖进来；3D 模型请导出 STEP。`);
+  if (["sldprt", "prt", "ipt", "catpart", "x_t", "x_b", "par"].includes(ext)) return say(`.${esc(ext)} 是 CAD 软件的原生格式。请在 CAD 里<b>导出 STEP</b>（AP214/AP242）再上传，所有供应商都能打开。`);
+  if (!["stl", "obj", "step", "stp", "igs", "iges"].includes(ext)) return say(`暂不支持 .${esc(ext)} 文件。3D 请上传 STEP / IGES / STL / OBJ，2D 请上传 DXF / PDF / PNG / JPG。`);
   say(`🧊 ${esc(f.name)}`, "me");
   const m = say(`<span class="spin"></span> 正在读取 3D 模型…`);
   try {
@@ -60,7 +63,7 @@ async function onFile(f, sampleCase = null) {
     let geo;
     if (ext === "stl") geo = new STLLoader().parse(buf);
     else if (ext === "obj") geo = mergeObj(new OBJLoader().parse(new TextDecoder().decode(buf)));
-    else geo = await readStep(buf);
+    else geo = await readStep(buf, ext === "igs" || ext === "iges");
     st.geo = geo; st.info = measure(geo);
     showModel(m, `已读取 3D 模型 <b>${esc(f.name)}</b>。`);
     askSpec();
@@ -74,12 +77,12 @@ function mergeObj(obj) {
   const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.BufferAttribute(pos, 3)); return geo;
 }
 
-async function readStep(buf) {   // OpenCascade compiled to WebAssembly (occt-import-js)
+async function readStep(buf, iges = false) {   // OpenCascade compiled to WebAssembly (occt-import-js)
   const base = "https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/";
   if (!window.occtimportjs) await new Promise((ok, bad) => { const s = document.createElement("script"); s.src = base + "occt-import-js.js"; s.onload = ok; s.onerror = () => bad(new Error("STEP 解析库加载失败")); document.head.appendChild(s); });
   const occt = await window.occtimportjs({ locateFile: (n) => base + n });
-  const r = occt.ReadStepFile(new Uint8Array(buf), null);
-  if (!r.success || !r.meshes.length) throw new Error("STEP 文件里没有实体");
+  const r = iges ? occt.ReadIgesFile(new Uint8Array(buf), null) : occt.ReadStepFile(new Uint8Array(buf), null);
+  if (!r.success || !r.meshes.length) throw new Error("文件里没有可读取的实体");
   const pos = [];
   for (const m of r.meshes) {
     const p = m.attributes.position.array, idx = m.index.array;
@@ -124,6 +127,49 @@ async function aiReconstruct(caseId) {
   askSpec();
 }
 
+// real AI modelling through the ClearFab backend (only when the page is served by it and a key is configured)
+const API = new URL("../api/", location.href).href;
+let aiState = null;
+async function aiAvailable() {
+  if (aiState === null) {
+    try { const r = await fetch(API + "ai/status"); aiState = r.ok && (await r.json()).available; } catch { aiState = false; }
+  }
+  return aiState;
+}
+
+async function aiModel(f) {
+  const m = say(`<b>AI 识图建模</b><ul class="steps-ai"><li class="run">上传图纸</li></ul><span class="small muted">通常 30–90 秒</span>`);
+  const ul = $("ul", m);
+  const tick = ["Claude 读取视图和尺寸", "生成参数化建模代码", "OpenCascade 建模、导出 STEP"];
+  let k = 0;
+  const timer = setInterval(() => {
+    if (k >= tick.length) return;
+    ul.lastElementChild.className = "done";
+    const li = document.createElement("li"); li.className = "run"; li.textContent = tick[k++]; ul.appendChild(li);
+  }, 9000);
+  const fd = new FormData(); fd.append("file", f); fd.append("note", st.note || "");
+  try {
+    const r = await fetch(API + "ai/model", { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    clearInterval(timer); ul.querySelectorAll("li").forEach((li) => li.className = "done");
+    const sp = d.spec;
+    st.geo = new STLLoader().parse(await (await fetch(new URL(d.stl, location.href))).arrayBuffer());
+    st.info = measure(st.geo); st.step = new URL(d.step, location.href).href; st.stl = new URL(d.stl, location.href).href;
+    st.preset = { material: MATERIAL_OPTS.find((x) => sp.material_hint && x.includes(sp.material_hint.replace(/[^0-9A-Za-z]/g, "").slice(0, 4))) || null, qty: sp.quantity_hint || null };
+    const list = (t, a) => a && a.length ? `<h3>${t}</h3><ul class="list">${a.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+    const m2 = say("");
+    showModel(m2, `<b>${esc(sp.name || "零件")}</b>：${esc(sp.summary || "")} <span class="tag ${sp.confidence === "high" ? "ok" : "warn"}">置信度 ${esc(sp.confidence || "?")}</span> <a href="${st.step}" download>下载 STEP</a>`);
+    m2.insertAdjacentHTML("beforeend", list("尺寸", sp.dimensions) + list("特征", sp.features) + list("AI 自行假设的尺寸（请核对）", sp.assumptions)
+      + `<p class="small muted">建模尝试 ${d.attempts} 次。请核对形状和尺寸；不对的地方直接在下面输入框告诉我，或重新上传更清楚的图。</p>`);
+    askSpec();
+  } catch (e) {
+    clearInterval(timer);
+    m.innerHTML = `AI 建模没有成功：${esc(e.message)}`;
+    drawingOnly("图纸");
+  }
+}
+
 function drawingOnly(kind) {
   const m = say(`收到你的${kind}。<br><span class="proto">内测</span> AI 读图生成 3D 数模的功能正在内测，这个公开演示站还不能处理你自己的图纸；正式版大约 1 分钟出数模。<br>现在你可以：
     <div class="chips"><button class="chip-btn" data-a="go">直接按图纸询价（供应商按图报价）</button><button class="chip-btn" data-a="3d">改传 3D 文件</button><button class="chip-btn" data-a="demo">用示例草图体验 AI 建模</button></div>`);
@@ -162,6 +208,9 @@ function askSpec() {
       <label>交付方式</label><select id="inc">${Object.entries(INCOTERMS).map(([k, v]) => `<option value="${k}" ${k === "DAP" ? "selected" : ""}>${v}</option>`).join("")}</select>
       <label>期望付款</label><select id="pay">${PAY_OPTS.map((x) => `<option ${x === "发货后 30 天" ? "selected" : ""}>${x}</option>`).join("")}</select>
       <label>期望交期</label><input id="dl" type="date"></div>
+    <h3>报价规则</h3><div class="form" style="grid-template-columns:90px 1fr">
+      <label>目标单价 €</label><div class="row"><input id="tp" type="number" step="0.01" placeholder="可不填"><span class="small muted">填了供应商更容易判断值不值得报</span></div>
+      <label>报价截止</label><input id="qb" type="date"></div>
     <button class="primary" id="gen" style="margin-top:12px">生成询价单</button>`, "bot", "wide");
   const procs = $("#procs", m);
   const drawProcs = (mat) => {
@@ -178,7 +227,8 @@ function askSpec() {
     if (!sel.length) return alert("请至少勾选一道工艺");
     if (!$("#addr", m).value.trim()) return alert("请填写交货地址");
     buildRfq({ material, qty: +$("#qty", m).value, annual: +$("#annual", m).value, procs: sel, quality: `${$("#tol", m).value} · ${$("#cert", m).value}`,
-      address: $("#addr", m).value.trim(), incoterm: $("#inc", m).value, pay: $("#pay", m).value, deadline: $("#dl", m).value });
+      address: $("#addr", m).value.trim(), incoterm: $("#inc", m).value, pay: $("#pay", m).value, deadline: $("#dl", m).value,
+      target: +$("#tp", m).value || null, quote_by: $("#qb", m).value });
   };
 }
 
@@ -208,10 +258,11 @@ async function buildRfq(spec) {
   }
   const i = st.info;
   const rfq = { id, created: new Date().toISOString().slice(0, 10), title: `${spec.material} 零件 · ${spec.qty} 件`, buyer: "我（本浏览器）",
-    files: { stl: st.caseId ? `demo/${st.caseId}.stl` : null, step: st.step || null, drawing: !!st.drawing, name: st.name },
+    files: { stl: st.stl || (st.caseId ? `demo/${st.caseId}.stl` : null), step: st.step || null, drawing: !!st.drawing, name: st.name },
     bbox: i?.bbox, volume_cm3: i?.volume_cm3, material: spec.material, qty: spec.qty, annual: spec.annual, quality: spec.quality,
     address: spec.address, incoterm: spec.incoterm, pay: spec.pay, deadline: spec.deadline, process_name: spec.procs.map((p) => PROCESS_OPTS[p]).join(" → "),
-    route, ref_total: ref, note: st.note || "", caseId: st.caseId };
+    route, ref_total: ref, note: st.note || "", caseId: st.caseId, procs: spec.procs, target: spec.target, quote_by: spec.quote_by,
+    mass_kg: i ? i.volume_cm3 * densityOf(spec.material) / 1000 : null, industry: "（你的行业）", views: 0 };
   const m = say(`询价单已生成，请确认：${rfqDoc(rfq)}
     <div class="row" style="margin-top:10px"><button class="primary" id="pub">发布给供应商</button><button id="edit">修改</button></div>`, "bot", "wide");
   $("#edit", m).onclick = askSpec;
@@ -229,22 +280,50 @@ export function rfqDoc(r) {
     <dt>工艺路线</dt><dd>${r.route.map((s, k) => `${k + 1}. ${esc(s.op)}`).join("<br>")}</dd>
     <dt>质量</dt><dd>${esc(r.quality)}</dd><dt>交货地址</dt><dd>${esc(r.address)}</dd>
     <dt>交付 / 付款</dt><dd>${esc(INCOTERMS[r.incoterm])} · ${esc(r.pay)}</dd><dt>期望交期</dt><dd>${esc(r.deadline || "尽快")}</dd>
+    <dt>报价规则</dt><dd>${r.target ? "目标单价 " + eur(r.target) + " · " : ""}报价截止 ${esc(r.quote_by || "未设")}</dd>
     ${r.ref_total ? `<dt>平台参考成本</dt><dd>德国 ${eur(r.ref_total.DE, 0)} · 中国 ${eur(r.ref_total.CN, 0)}（出厂制造成本，<a href="demo.html?case=${r.caseId}" target="_blank">查看仿真与成本分析</a>）</dd>` : ""}
     ${r.note ? `<dt>备注</dt><dd>${esc(r.note).replace(/\n/g, "<br>")}</dd>` : ""}</dl></div>`;
 }
 
-// ------------------------------------------------------------------ my RFQs and quotes
+// ------------------------------------------------------------------ my RFQs: quotes on one basis + supplier questions
+function landed(r, q, v) {
+  // goods + one-off + freight (if not delivered) + import duty (if from China and not DDP) — assumptions in LANDED
+  const goods = v.unit * r.qty, fromCN = q.origin === "CN";
+  const delivered = v.incoterm === "DAP" || v.incoterm === "DDP";
+  const freight = delivered ? 0 : (r.mass_kg ? freightEstimate(r.mass_kg * r.qty, fromCN) : 0);
+  const duty = fromCN && v.incoterm !== "DDP" ? (goods + freight) * LANDED.dutyCN : 0;
+  return { goods, freight, duty, total: goods + (v.oneoff || 0) + freight + duty };
+}
+
 $("#myRfqs").onclick = (e) => {
   e.preventDefault();
   const list = localRfqs();
   if (!list.length) return say("你还没有发布询价单。");
-  say(`<b>我的询价单</b>${list.map((r) => {
-    const qs = quotesFor(r.id);
+  const qa = allQuestions();
+  const html = list.map((r) => {
+    const rows = quotesFor(r.id).flatMap((q) => q.variants.map((v, k) => ({ q, v, k, L: landed(r, q, v) })));
+    rows.sort((a, b) => a.L.total - b.L.total);
+    const ref = r.ref_total?.DE;
+    const left = daysLeft(r.quote_by);
+    const qs = qa.map((x, i) => ({ ...x, i })).filter((x) => x.rfq === r.id);
     return `<div class="rfq-doc" style="margin-top:10px"><h3>${esc(r.id)} · ${esc(r.title)}</h3>
-      ${qs.length ? qs.map((q) => `<div style="margin-top:8px"><b>${esc(q.makerName)}</b> <span class="small muted">${esc(q.makerInfo)}</span>
-        <table style="margin-top:4px"><tr><th>方案</th><th class="n">单价</th><th class="n">一次性费用</th><th class="n">交期</th><th>交付</th><th>付款</th><th>说明</th></tr>
-        ${q.variants.map((v, k) => `<tr><td>${String.fromCharCode(65 + k)}</td><td class="n">${eur(v.unit)}</td><td class="n">${eur(v.oneoff, 0)}</td><td class="n">${v.lead} 天</td><td>${esc(v.incoterm)} ${esc(v.place)}</td><td>${esc(v.pay)}</td><td class="small">${esc(v.note)}</td></tr>`).join("")}</table></div>`).join("")
-        : '<p class="small muted">还没有报价。</p>'}</div>`; }).join("")}`, "bot", "wide");
+      <div class="small muted">${rows.length ? new Set(rows.map((x) => x.q.maker)).size : 0} 家报价 · ${rows.length} 个方案${left != null ? ` · 距报价截止 ${left} 天` : ""}${r.target ? ` · 目标单价 ${eur(r.target)}` : ""}</div>
+      ${rows.length ? `<table style="margin-top:6px"><tr><th>供应商 / 方案</th><th class="n">单价</th><th class="n">货值</th><th class="n">一次性</th><th class="n">运费估</th><th class="n">关税估</th><th class="n"><b>到岸总价</b></th><th class="n">vs 平台参考</th><th>交期 · 交付 · 付款</th></tr>
+        ${rows.map((x, n) => `<tr class="${n ? "" : "sel"}"><td><b>${esc(x.q.makerName)}</b> ${String.fromCharCode(65 + x.k)}<div class="small muted">${esc(x.q.makerInfo)}</div>${x.v.note ? `<div class="small">${esc(x.v.note)}</div>` : ""}</td>
+          <td class="n">${eur(x.v.unit)}${r.target ? `<div class="small ${x.v.unit <= r.target ? "" : "muted"}">${x.v.unit <= r.target ? "✓ 达到目标价" : "高于目标 " + Math.round((x.v.unit / r.target - 1) * 100) + "%"}</div>` : ""}</td>
+          <td class="n">${eur(x.L.goods, 0)}</td><td class="n">${eur(x.v.oneoff || 0, 0)}</td><td class="n">${x.L.freight ? eur(x.L.freight, 0) : "含"}</td><td class="n">${x.L.duty ? eur(x.L.duty, 0) : "–"}</td>
+          <td class="n"><b>${eur(x.L.total, 0)}</b></td><td class="n">${ref ? (x.L.goods >= ref ? "+" : "") + Math.round((x.L.goods / ref - 1) * 100) + "%" : "–"}</td>
+          <td class="small">${x.v.lead} 天 · ${esc(x.v.incoterm)} ${esc(x.v.place || "")} · ${esc(x.v.pay)}</td></tr>`).join("")}</table>
+        <p class="small muted">到岸总价 = 货值 + 一次性费用 + 运费（非 DAP/DDP 时按重量估算）+ 关税（中国发货且非 DDP 时按 ${LANDED.dutyCN * 100}% 假设，实际按 HS 编码）。第一行为最低。</p>`
+        : '<p class="small muted">还没有报价。</p>'}
+      ${qs.length ? `<h3>供应商提问</h3>${qs.map((x) => `<div class="small" style="margin:6px 0"><b>${esc(x.makerName)}：</b>${esc(x.text)}<br>${x.answer ? `<span class="muted">你的回答：${esc(x.answer)}</span>` : `<input data-qa="${x.i}" placeholder="回答（所有报价方可见）" style="width:70%"><button data-qa-send="${x.i}">回答</button>`}</div>`).join("")}` : ""}
+    </div>`;
+  }).join("");
+  const m = say(`<b>我的询价单</b>${html}`, "bot", "wide");
+  m.querySelectorAll("[data-qa-send]").forEach((b) => b.onclick = () => {
+    const inp = m.querySelector(`[data-qa="${b.dataset.qaSend}"]`); if (!inp.value.trim()) return;
+    answerQuestion(+b.dataset.qaSend, inp.value.trim()); inp.replaceWith(Object.assign(document.createElement("span"), { className: "muted", textContent: "你的回答：" + inp.value.trim() })); b.remove();
+  });
 };
 
 welcome();

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClearFab 明造</title>
+<meta name="description" content="零件从设计、仿真、工艺到成本全链路透明：上传零件，自动有限元仿真、设计优化、工艺生成与逐工序成本；供应商在透明底价上报价。">
+<link rel="stylesheet" href="assets/style.css"><link rel="stylesheet" href="assets/site.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f6e6e'/%3E%3Cpath d='M8 22V10h10M8 16h7M18 22l6-12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<header class="top"><a class="logo" href="index.html"><b>Clear</b>Fab 明造</a><span class="spacer"></span>
+  <nav class="nav"><a href="#why">为什么</a><a href="#how">流程</a><a href="#portals">两个入口</a><a href="#pricing">收费</a><a href="#tech">技术</a><a href="#faq">问答</a><a class="cta" href="demo.html">在线演示</a></nav>
+</header>
+<main>
+  <div class="hero2">
+    <div>
+      <h1>零件从设计到出厂，<br><em>每个环节的成本</em>都看得见</h1>
+      <p class="sub">拖入零件，平台自动完成有限元仿真、设计优化、工艺生成和制造过程仿真，按工序给出成本。供应商在这份透明底价上加自己的物流、管理和利润报价，双方直接签约。</p>
+      <div class="btns"><a class="btn-l primary" href="demo.html">看演示：一个支架的全流程 →</a><a class="btn-l" href="#portals">寻造台 / 承造台</a></div>
+      <div class="badges"><span class="badge">有限元仿真</span><span class="badge">拓扑优化</span><span class="badge">9 种工艺比选</span><span class="badge">德国 · 东欧 · 中国 三地成本</span><span class="badge">买卖直签，平台不抽佣</span></div>
+    </div>
+    <div class="viewer hero-view" id="hero"><div class="hud" id="heroHud">载入示例零件…</div><div class="legend" id="heroLegend" hidden></div></div>
+  </div>
+
+  <section id="why">
+    <h2>询价，不该是黑箱</h2>
+    <p class="lead">采购发图纸，等一周，收回来几个总价，差两三倍也说不清为什么。供应商拿到图纸，先花半天估工时，最后多半没成交。</p>
+    <div class="cmp">
+      <div class="card"><h3>今天的询价</h3><ul class="list bad-x">
+        <li>只有总价，看不到材料、机时、模具、表面处理各占多少</li>
+        <li>设计是否过度、换材料或换工艺能省多少，没人算</li>
+        <li>供应商为每份询价重复做工艺和报价，大量白干</li>
+        <li>跨境（中国 ↔ 欧洲）的成本差异只能靠经验</li></ul></div>
+      <div class="card"><h3>在 ClearFab</h3><ul class="list good-x">
+        <li>每道工序的依据、工时、费率、金额逐行列出</li>
+        <li>仿真先验证强度，再给出材料比选和减重方案</li>
+        <li>供应商拿到的是算好的工艺路线和底价，只需加自己的成本</li>
+        <li>德国、东欧、中国三地参考成本并排对比</li></ul></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <h2>六步，从零件到报价</h2>
+    <p class="lead">前四步由平台自动完成，几秒到几十秒就能出结果。</p>
+    <div class="steps">
+      <div><b>上传零件</b><span class="small muted">STL / STEP 拖入；填写载荷、约束、使用温度和环境、材料、数量、公差、证书要求。</span></div>
+      <div><b>有限元仿真</b><span class="small muted">应力云图、位移、安全系数。秒级预览，STEP 文件可做四面体网格精确校核。</span></div>
+      <div><b>设计优化</b><span class="small muted">15 种材料比选，拓扑优化减重，可制造性检查（倒扣、内腔、薄壁、装夹次数）。</span></div>
+      <div><b>工艺与成本</b><span class="small muted">铣、车、钣金、压铸、精铸、注塑、金属/尼龙 3D 打印比选；工艺路线逐工序核算，附制造过程动画。</span></div>
+      <div><b>供应商报价</b><span class="small muted">在平台底价上叠加物流、关税、管理、资金、风险、利润，结构对买家完全透明。</span></div>
+      <div><b>直接签约</b><span class="small muted">买卖双方直接联系、签合同。平台不是合同当事方，也不抽成交佣金。</span></div>
+    </div>
+  </section>
+
+  <section id="portals">
+    <h2>两个入口</h2>
+    <p class="lead">同一份零件数据，买家和供应商各自看到自己需要的部分。</p>
+    <div class="entries" style="margin:0">
+      <a class="entry" href="demo.html"><h2>寻造台 →</h2><p class="muted">买家 / 需求方</p>
+        <ul class="list"><li>上传零件，设定力学参数和使用场地</li><li>仿真、优化、工艺、成本一次完成</li><li>发布需求，零件和联系方式只对付费打开的供应商可见</li><li>按份打开供应商报价，看到完整成本结构</li></ul></a>
+      <a class="entry maker" href="demo.html"><h2>承造台 →</h2><p class="muted">卖家 / 供应商</p>
+        <ul class="list"><li>需求大厅：工艺、材料、数量、预估金额一眼可见</li><li>按份打开需求：三维模型、仿真结果、工艺路线</li><li>在平台底价上加自己的成本，几分钟出报价</li><li>展示认证和产能，买家按透明度选择</li></ul></a>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <h2>双向按份收费</h2>
+    <p class="lead">平台只收信息服务费：谁打开对方的内容谁付费，同一份内容只收一次。合同和货款都在买卖双方之间。</p>
+    <div class="price">
+      <div class="card"><div class="muted">供应商打开一份需求</div><div class="amt" id="feeM">4,90 €</div><div class="small muted">完整模型、仿真、工艺路线、买家联系方式</div></div>
+      <div class="card"><div class="muted">买家打开一份报价</div><div class="amt" id="feeB">9,90 €</div><div class="small muted">完整价格结构、供应商身份与联系方式</div></div>
+      <div class="card"><div class="muted">仿真、优化、工艺与成本</div><div class="amt">0 €</div><div class="small muted">上传与分析不收费（内测期）</div></div>
+    </div>
+    <p class="small muted">价格为内测期参考价（净价）。</p>
+  </section>
+
+  <section id="tech">
+    <h2>背后的引擎</h2>
+    <p class="lead">基于成熟的开源工程计算库，并在自研的 CAX Agent 设计仿真平台上做过交叉验证。</p>
+    <div class="tech">
+      <div class="card"><h3 style="margin-top:0">即时有限元</h3><p class="small muted">体素 Hex8 非协调元，几秒内给出应力和安全系数；悬臂梁对照解析解，误差小于 1%。</p></div>
+      <div class="card"><h3 style="margin-top:0">精确校核</h3><p class="small muted">OpenCascade 读取 STEP，gmsh 划分二阶四面体网格，scikit-fem 求解。</p></div>
+      <div class="card"><h3 style="margin-top:0">拓扑优化</h3><p class="small muted">SIMP 方法在零件原有包络内去除低效材料，同时复核优化后的安全系数。</p></div>
+      <div class="card"><h3 style="margin-top:0">工艺与 CAM</h3><p class="small muted">六向可达性分析定装夹次数和倒扣；层切刀路、车削、增材、充型过程可视化。</p></div>
+    </div>
+  </section>
+
+  <section id="faq" class="faq">
+    <h2>常见问题</h2>
+    <details><summary>平台的成本估算准吗？</summary><p class="small muted">估算基于工时模型和参考费率，适合比较方案和判断报价是否合理，不代替供应商的正式报价。内测期会用真实成交数据持续校准。</p></details>
+    <details><summary>我的图纸会被谁看到？</summary><p class="small muted">需求大厅只显示摘要（工艺、材料、数量、尺寸、预估金额）。三维模型和联系方式只对付费打开该需求的供应商可见。</p></details>
+    <details><summary>平台参与合同或收佣金吗？</summary><p class="small muted">不参与。双方直接签约、直接结算，平台只收按份打开的信息服务费。</p></details>
+    <details><summary>支持哪些文件和工艺？</summary><p class="small muted">文件：STL、OBJ、PLY、STEP。工艺：三轴/五轴铣削、车削、钣金、铝压铸、熔模精铸、注塑、金属 SLM 和尼龙 SLS 3D 打印。</p></details>
+  </section>
+</main>
+<footer><div class="in"><span><b>ClearFab 明造</b> · 内测版</span><span><a href="demo.html">在线演示</a></span><span><!-- TODO: 运营主体确定后补 Impressum / Datenschutz（德国网站法定要求） -->Impressum · Datenschutz（筹备中）</span></div></footer>
+<script type="module">
+import { Viewer } from "./assets/viewer.js";
+const el = document.getElementById("hero"), v = new Viewer(el);
+v.controls.autoRotate = true; v.controls.autoRotateSpeed = 1.2;
+const res = await (await fetch("demo/bracket.json")).json();
+await v.loadSTL("demo/bracket.stl");
+v.stress(res.fea.viz); v.meshOpacity(0.15); v.markers(res.fea.fixed_center, res.fea.load_center, res.req.force);
+document.getElementById("heroHud").textContent = `铝合金支架 · 3 kN · 安全系数 ${res.fea.sf.toFixed(2)} · ${res.req.qty} 件德国参考 ${res.costs.DE.find((e) => e.process === res.recommended).per_part.toFixed(2)} €/件`;
+const lg = document.getElementById("heroLegend"); lg.hidden = false;
+lg.innerHTML = `<div>von Mises 应力（MPa）</div><div class="bar"></div><div class="row" style="justify-content:space-between"><span>0</span><span>${Math.round(res.fea.viz.scale_mpa)}+</span></div>`;
+</script>
+</body></html>

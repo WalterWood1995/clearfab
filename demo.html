@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>在线演示 · ClearFab 明造</title>
+<meta name="description" content="三个示例零件的完整分析：有限元仿真、设计优化、材料比选、工艺路线、逐工序成本和制造过程仿真。">
+<link rel="stylesheet" href="assets/style.css"><link rel="stylesheet" href="assets/site.css">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<header class="top"><a class="logo" href="index.html"><b>Clear</b>Fab 明造</a><span class="portal">在线演示</span><span class="spacer"></span><nav class="nav"><a href="index.html">首页</a><a href="index.html#pricing">收费</a></nav></header>
+<main>
+  <p class="muted">下面是平台对三个示例零件的真实计算结果（预先算好）。可以旋转模型、切换地区、点工艺看工艺路线，或者播放制造过程仿真。</p>
+  <div class="case-pick" id="cases"></div>
+  <div class="grid2">
+    <div><div class="viewer" id="vw"><div class="hud" id="hud"></div><div class="tools"><button id="tFit">复位视角</button><button id="tStop">停止动画</button></div><div class="legend" id="legend" hidden></div></div>
+      <p class="small muted" id="info"></p></div>
+    <div class="card" id="reqCard"></div>
+  </div>
+  <div id="report"></div>
+</main>
+<footer><div class="in"><span><b>ClearFab 明造</b> · 内测版</span><span>Impressum · Datenschutz（筹备中）</span></div></footer>
+<script type="module">
+import { setMeta, esc, num } from "./assets/common.js";
+import { Viewer } from "./assets/viewer.js";
+import { renderReport } from "./assets/report.js";
+const idx = await (await fetch("demo/index.json")).json();
+setMeta(idx.meta);
+const v = new Viewer(document.getElementById("vw"));
+document.getElementById("tFit").onclick = () => v.fit();
+document.getElementById("tStop").onclick = () => v.stop();
+const SIDE = { "x-": "X− 面", "x+": "X+ 面", "y-": "Y− 面", "y+": "Y+ 面", "z-": "Z− 面", "z+": "Z+ 面" };
+const box = document.getElementById("cases");
+async function show(c) {
+  box.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.id === c.id));
+  document.getElementById("hud").textContent = "载入中…";
+  const res = await (await fetch(`demo/${c.id}.json`)).json();
+  res.has_step = false;
+  await v.loadSTL(`demo/${c.id}.stl`);
+  const r = res.req, i = res.info, m = idx.meta;
+  document.getElementById("info").textContent = `包络 ${i.bbox.map((x) => num(x, 1)).join(" × ")} mm · 体积 ${num(i.volume_mm3 / 1000, 1)} cm³`;
+  document.getElementById("reqCard").innerHTML = `<h2>买家输入</h2><table>
+    <tr><td>固定约束</td><td>${SIDE[r.fixed.side]}</td></tr><tr><td>载荷</td><td>F = (${r.force.join(", ")}) N，作用在 ${SIDE[r.load.side]}；${esc(m.load_types[r.load_type].name)}</td></tr>
+    <tr><td>环境</td><td>${r.temp_c} °C · ${esc({ indoor: "室内干燥", outdoor: "户外 / 潮湿" }[r.environment] || r.environment)} · 交货德国</td></tr>
+    <tr><td>材料</td><td>${esc(m.materials[r.material].name)}</td></tr><tr><td>数量</td><td>${r.qty} 件</td></tr>
+    <tr><td>质量要求</td><td>ISO 2768-m · ${esc(m.roughness[r.roughness])} · ${esc(m.certificates[r.certificate])}</td></tr></table>
+    <p class="small muted">在真实平台上，这些参数由买家在寻造台填写，载荷位置也可以直接在模型上点选。</p>`;
+  renderReport(document.getElementById("report"), res, { viewer: v, role: "demo", legendEl: document.getElementById("legend") });
+  document.getElementById("hud").textContent = "拖动旋转 · 滚轮缩放 · 右键平移";
+}
+box.innerHTML = idx.cases.map((c) => `<button data-id="${c.id}">${esc(c.title)} · ${c.qty} 件</button>`).join("");
+box.querySelectorAll("button").forEach((b) => b.onclick = () => show(idx.cases.find((c) => c.id === b.dataset.id)));
+show(idx.cases[0]);
+</script>
+</body></html>

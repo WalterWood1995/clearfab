@@ -1,0 +1,40 @@
+/* marketing site layer on top of style.css */
+.nav { display: flex; gap: 18px; align-items: center; }
+.nav a { color: var(--ink); text-decoration: none; font-size: 14px; }
+.nav a:hover { color: var(--brand); }
+.nav .cta { background: var(--brand); color: var(--brand-ink); padding: 6px 14px; border-radius: 6px; font-weight: 600; }
+@media (max-width: 760px) { .nav a:not(.cta) { display: none; } }
+section { padding: 56px 0 8px; }
+section > h2 { font-size: 26px; margin: 0 0 6px; }
+section > p.lead { color: var(--muted); max-width: 760px; margin: 0 0 22px; }
+.hero2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 28px; align-items: center; padding-top: 36px; }
+@media (max-width: 900px) { .hero2 { grid-template-columns: 1fr; } .hero2 h1 { font-size: 28px; } .hero-view { height: 320px; } }
+.hero2 h1 { font-size: 38px; line-height: 1.2; margin: 0 0 14px; }
+.hero2 h1 em { font-style: normal; color: var(--brand); }
+.hero2 .sub { font-size: 16px; color: var(--muted); margin-bottom: 20px; }
+.hero2 .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn-l { display: inline-block; padding: 11px 20px; border-radius: 8px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--ink); background: var(--panel); }
+.btn-l.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.btn-l.maker { background: var(--accent); border-color: var(--accent); color: #fff; }
+.hero-view { height: 420px; }
+.badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+.badge { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+.cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 760px) { .cmp { grid-template-columns: 1fr; } }
+.cmp .card h3 { margin-top: 0; color: var(--ink); }
+.bad-x li::marker { content: "✗  "; color: var(--bad); }
+.good-x li::marker { content: "✓  "; color: var(--ok); }
+.steps { counter-reset: s; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.steps > div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; position: relative; }
+.steps > div::before { counter-increment: s; content: counter(s); position: absolute; right: 14px; top: 10px; font-size: 28px; font-weight: 800; color: var(--line); }
+.steps b { display: block; font-size: 15px; margin-bottom: 4px; }
+.price { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.price .card { text-align: center; }
+.price .amt { font-size: 34px; font-weight: 800; margin: 6px 0; font-variant-numeric: tabular-nums; }
+.tech { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.faq details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; }
+.faq summary { cursor: pointer; font-weight: 600; }
+footer { margin-top: 60px; padding: 24px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+footer .in { max-width: 1400px; margin: 0 auto; display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-between; }
+.case-pick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.case-pick button.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }

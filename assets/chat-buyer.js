@@ -138,13 +138,22 @@ const API = ls.get("cf_api") || (location.hostname.endsWith("github.io") ? PUBLI
 const apiUrl = (p) => new URL(p, API).href;
 let aiState = null;
 async function aiAvailable() {
-  if (aiState === null) {
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 5000);
+  if (!(aiState && aiState.available)) {   // a failed check is retried next time (backend may come up later)
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
     try { const r = await fetch(API + "ai/status", { signal: ctl.signal }); aiState = r.ok ? await r.json() : false; } catch { aiState = false; }
     clearTimeout(t);
+    const b = $("#aiBadge");
+    if (b) {
+      const on = aiState && aiState.available;
+      b.textContent = on ? "● 工程后端已连接" : "○ 演示模式：工程后端未连接";
+      b.style.color = on ? "#2e7d32" : "#b26a00";
+      b.title = on ? "FEA、DFM、工艺成本和 AI 建模可用" : `连不上 ${API}（后端没开，或浏览器/插件拦截了跨站请求）。点击重试`;
+    }
   }
   return aiState && aiState.available;
 }
+$("#aiBadge").onclick = (e) => { e.preventDefault(); aiAvailable(); };
+aiAvailable();
 
 function askCode() {
   return new Promise((resolve) => {
@@ -236,7 +245,7 @@ async function askSpec() {
     <h3>工艺路线 <span class="small muted">（已按零件形状和材料预选，可增减）</span></h3><div class="chips" id="procs"></div>
     <h3>质量</h3><div class="row"><select id="tol"><option>ISO 2768-m（一般）</option><option>ISO 2768-f（精细）</option><option>IT7（精密配合）</option></select>
       <select id="cert"><option>无证书</option><option selected>材质证书 EN 10204 3.1</option><option>首件检验 FAI / EMPB</option><option>PPAP</option></select></div>
-    ${aiState && aiState.available ? loadCaseHtml() : ""}
+    ${aiState && aiState.available ? loadCaseHtml() : `<p class="small" style="color:#b26a00">有限元仿真、DFM 评审和工艺成本需要连接工程后端，当前是演示模式，只能生成询价单。（${esc(API)} 连不上）</p>`}
     <h3>交货</h3><div class="form" style="grid-template-columns:90px 1fr">
       <label>交货地址</label><input id="addr" placeholder="公司、街道、邮编、城市、国家">
       <label>交付方式</label><select id="inc">${Object.entries(INCOTERMS).map(([k, v]) => `<option value="${k}" ${k === "DAP" ? "selected" : ""}>${v}</option>`).join("")}</select>

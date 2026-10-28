@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { Viewer } from "./viewer.js";
+import { MAT_KEY, loadCaseHtml, readLoadCase, runReview, showReview } from "./review.js";
 import { esc, num, eur } from "./common.js";
 import { PROCESS_OPTS, MATERIAL_OPTS, PAY_OPTS, INCOTERMS, saveRfq, nextRfqId, localRfqs, quotesFor, sampleRfqs, freightEstimate, LANDED, questionsFor, allQuestions, answerQuestion, densityOf, daysLeft } from "./store.js";
 
@@ -45,7 +46,7 @@ $("#txt").onkeydown = (e) => e.key === "Enter" && sendText();
 async function onFile(f, sampleCase = null) {
   const ext = f.name.split(".").pop().toLowerCase();
   Object.keys(st).forEach((k) => delete st[k]);
-  st.name = f.name; st.caseId = sampleCase;
+  st.name = f.name; st.caseId = sampleCase; st.file = f;
   if (["png", "jpg", "jpeg", "webp"].includes(ext)) {
     st.drawing = URL.createObjectURL(f);
     say(`<img class="thumb" src="${st.drawing}" alt="">${esc(f.name)}`, "me");
@@ -153,12 +154,16 @@ function askCode() {
   });
 }
 
-async function aiModel(f) {
+async function authHeaders() {
   let code = ls.get("cf_code") || "";
-  if (aiState.need_code && !code) {
-    code = await askCode();
-    if (!code) return drawingOnly("图纸");
-  }
+  if (aiState && aiState.need_code && !code) code = (await askCode()) || "";
+  return code ? { "X-Access-Code": code } : null;
+}
+
+async function aiModel(f) {
+  const hdr = await authHeaders();
+  if (aiState.need_code && !hdr) return drawingOnly("图纸");
+  const code = hdr ? hdr["X-Access-Code"] : "";
   const m = say(`<b>AI 识图建模</b><ul class="steps-ai"><li class="run">上传图纸</li></ul><span class="small muted">通常 30–90 秒</span>`);
   const ul = $("ul", m), step = (t) => { ul.lastElementChild.className = "done"; const li = document.createElement("li"); li.className = "run"; li.textContent = t; ul.appendChild(li); };
   const fd = new FormData(); fd.append("file", f); fd.append("note", st.note || "");
@@ -167,6 +172,7 @@ async function aiModel(f) {
     const j = await r.json();
     if (r.status === 401) { ls.set("cf_code", ""); m.remove(); return aiModel(f); }
     if (!r.ok) throw new Error(j.detail || r.status);
+    st.partId = j.id;
     const tick = ["Claude 读取视图和尺寸", "生成参数化建模代码", "OpenCascade 建模、导出 STEP"];
     let d, k = 0, t0 = Date.now(), queued = false;
     for (;;) {
@@ -180,6 +186,7 @@ async function aiModel(f) {
     if (d.status !== "done") throw new Error(d.error || d.detail || "未知错误");
     ul.querySelectorAll("li").forEach((li) => li.className = "done");
     const sp = d.spec;
+    st.title = sp.name;
     st.geo = new STLLoader().parse(await (await fetch(apiUrl(d.stl))).arrayBuffer());
     st.info = measure(st.geo); st.step = apiUrl(d.step); st.stl = apiUrl(d.stl);
     st.preset = { material: MATERIAL_OPTS.find((x) => sp.material_hint && x.includes(sp.material_hint.replace(/[^0-9A-Za-z]/g, "").slice(0, 4))) || null, qty: sp.quantity_hint || null };
@@ -219,7 +226,8 @@ function suggestProcesses(material) {
   return out;
 }
 
-function askSpec() {
+async function askSpec() {
+  await aiAvailable();
   const pre = st.preset || {};
   const mat0 = pre.material || (st.caseId === "shaft" ? "碳钢 C45" : "铝合金 6061-T6");
   const m = say(`接下来确认<b>材料、数量和工艺</b>：
@@ -228,6 +236,7 @@ function askSpec() {
     <h3>工艺路线 <span class="small muted">（已按零件形状和材料预选，可增减）</span></h3><div class="chips" id="procs"></div>
     <h3>质量</h3><div class="row"><select id="tol"><option>ISO 2768-m（一般）</option><option>ISO 2768-f（精细）</option><option>IT7（精密配合）</option></select>
       <select id="cert"><option>无证书</option><option selected>材质证书 EN 10204 3.1</option><option>首件检验 FAI / EMPB</option><option>PPAP</option></select></div>
+    ${aiState && aiState.available ? loadCaseHtml() : ""}
     <h3>交货</h3><div class="form" style="grid-template-columns:90px 1fr">
       <label>交货地址</label><input id="addr" placeholder="公司、街道、邮编、城市、国家">
       <label>交付方式</label><select id="inc">${Object.entries(INCOTERMS).map(([k, v]) => `<option value="${k}" ${k === "DAP" ? "selected" : ""}>${v}</option>`).join("")}</select>
@@ -236,7 +245,7 @@ function askSpec() {
     <h3>报价规则</h3><div class="form" style="grid-template-columns:90px 1fr">
       <label>目标单价 €</label><div class="row"><input id="tp" type="number" step="0.01" placeholder="可不填"><span class="small muted">填了供应商更容易判断值不值得报</span></div>
       <label>报价截止</label><input id="qb" type="date"></div>
-    <button class="primary" id="gen" style="margin-top:12px">生成询价单</button>`, "bot", "wide");
+    <button class="primary" id="gen" style="margin-top:12px">${aiState && aiState.available ? "工程评审（仿真 + DFM + 工艺成本）并生成询价单" : "生成询价单"}</button>`, "bot", "wide");
   const procs = $("#procs", m);
   const drawProcs = (mat) => {
     const on = suggestProcesses(mat);
@@ -251,9 +260,12 @@ function askSpec() {
     if (!material) return alert("请选择材料");
     if (!sel.length) return alert("请至少勾选一道工艺");
     if (!$("#addr", m).value.trim()) return alert("请填写交货地址");
-    buildRfq({ material, qty: +$("#qty", m).value, annual: +$("#annual", m).value, procs: sel, quality: `${$("#tol", m).value} · ${$("#cert", m).value}`,
+    const spec = { material, qty: +$("#qty", m).value, annual: +$("#annual", m).value, procs: sel, quality: `${$("#tol", m).value} · ${$("#cert", m).value}`,
       address: $("#addr", m).value.trim(), incoterm: $("#inc", m).value, pay: $("#pay", m).value, deadline: $("#dl", m).value,
-      target: +$("#tp", m).value || null, quote_by: $("#qb", m).value });
+      target: +$("#tp", m).value || null, quote_by: $("#qb", m).value };
+    if (!(aiState && aiState.available)) return buildRfq(spec);
+    if (!MAT_KEY[material]) return alert("工程评审目前支持列表里的材料；其他材料请直接生成询价单");
+    review(spec, readLoadCase(m), $("#gen", m));
   };
 }
 
@@ -270,6 +282,31 @@ const ROUTE = {
   inspect: [["质检", "全检 / 三坐标测量"]],
 };
 
+const TOL = { "ISO 2768-m（一般）": "2768m", "ISO 2768-f（精细）": "2768f", "IT7（精密配合）": "it7" };
+const CERT = { 无证书: "none", "材质证书 EN 10204 3.1": "3.1", "首件检验 FAI / EMPB": "fai", PPAP: "ppap" };
+
+async function review(spec, lc, btn) {
+  const hdr = await authHeaders();
+  if (aiState.need_code && !hdr) return say("没有邀请码，先直接生成询价单。"), buildRfq(spec);
+  const [tol, cert] = spec.quality.split(" · ");
+  const req = { material: MAT_KEY[spec.material], qty: spec.qty, annual: spec.annual || spec.qty, years: lc.years,
+    fixed: lc.fixed, load: lc.load, force: lc.force, load_type: lc.load_type, environment: lc.environment, temp_c: lc.temp_c,
+    tolerance: TOL[tol] || "2768m", roughness: "3.2", certificate: CERT[cert] || "none", incoterm: spec.incoterm,
+    address: spec.address, pay: spec.pay, deadline: spec.deadline, target: spec.target, quote_by: spec.quote_by, resolution: "standard" };
+  btn.disabled = true;
+  try {
+    const d = await runReview({ st, api: API, apiUrl, headers: hdr || {}, say, req,
+      meta: { part_no: lc.part_no, rev: lc.rev, title: st.title || st.name } });
+    showReview(d, say, apiUrl);
+    st.pkg = d;
+    spec.procs = [...new Set([...spec.procs])];
+    buildRfq(spec);
+  } catch (e) {
+    say(`工程评审没有完成：${esc(e.message)}。可以直接生成询价单。`);
+    buildRfq(spec);
+  } finally { btn.disabled = false; }
+}
+
 async function buildRfq(spec) {
   const id = nextRfqId();
   const ORDER = ["diecast", "investment", "imm", "print3d", "sheet", "turn", "mill", "weld", "heat", "deburr", "anodize", "zinc", "powder", "inspect"];
@@ -281,13 +318,20 @@ async function buildRfq(spec) {
     const s = (await sampleRfqs()).find((r) => r.caseId === st.caseId);
     if (s && spec.qty === s.qty) ref = s.ref_total;
   }
-  const i = st.info;
+  const i = st.info, pk = st.pkg;
+  if (pk) {
+    route.splice(0, route.length, ...pk.plan.map((o) => ({ stage: o.wc, op: o.op, basis: o.res })));
+    ref = { DE: pk.route.series * spec.qty, CN: null };
+  }
   const rfq = { id, created: new Date().toISOString().slice(0, 10), title: `${spec.material} 零件 · ${spec.qty} 件`, buyer: "我（本浏览器）",
     files: { stl: st.stl || (st.caseId ? `demo/${st.caseId}.stl` : null), step: st.step || null, drawing: !!st.drawing, name: st.name },
     bbox: i?.bbox, volume_cm3: i?.volume_cm3, material: spec.material, qty: spec.qty, annual: spec.annual, quality: spec.quality,
     address: spec.address, incoterm: spec.incoterm, pay: spec.pay, deadline: spec.deadline, process_name: spec.procs.map((p) => PROCESS_OPTS[p]).join(" → "),
     route, ref_total: ref, note: st.note || "", caseId: st.caseId, procs: spec.procs, target: spec.target, quote_by: spec.quote_by,
-    mass_kg: i ? i.volume_cm3 * densityOf(spec.material) / 1000 : null, industry: "（你的行业）", views: 0 };
+    mass_kg: i ? i.volume_cm3 * densityOf(spec.material) / 1000 : null, industry: "（你的行业）", views: 0,
+    pkg: pk ? { docs: Object.fromEntries(Object.entries(pk.docs).map(([k, u]) => [k, apiUrl(u)])), names: pk.doc_names, route: pk.route.name,
+      series: pk.route.series, price: pk.sheet.price, tooling: pk.sheet.tooling, part_no: pk.meta.part_no } : null };
+  if (pk) rfq.process_name = pk.route.name;
   const m = say(`询价单已生成，请确认：${rfqDoc(rfq)}
     <div class="row" style="margin-top:10px"><button class="primary" id="pub">发布给供应商</button><button id="edit">修改</button></div>`, "bot", "wide");
   $("#edit", m).onclick = askSpec;
@@ -306,7 +350,9 @@ export function rfqDoc(r) {
     <dt>质量</dt><dd>${esc(r.quality)}</dd><dt>交货地址</dt><dd>${esc(r.address)}</dd>
     <dt>交付 / 付款</dt><dd>${esc(INCOTERMS[r.incoterm])} · ${esc(r.pay)}</dd><dt>期望交期</dt><dd>${esc(r.deadline || "尽快")}</dd>
     <dt>报价规则</dt><dd>${r.target ? "目标单价 " + eur(r.target) + " · " : ""}报价截止 ${esc(r.quote_by || "未设")}</dd>
-    ${r.ref_total ? `<dt>平台参考成本</dt><dd>德国 ${eur(r.ref_total.DE, 0)} · 中国 ${eur(r.ref_total.CN, 0)}（出厂制造成本，<a href="demo.html?case=${r.caseId}" target="_blank">查看仿真与成本分析</a>）</dd>` : ""}
+    ${r.pkg ? `<dt>平台参考</dt><dd>${esc(r.pkg.route)}：系列单价 ${eur(r.pkg.series)} · 含间接费与利润的建议价 ${eur(r.pkg.price)} · 模具 ${eur(r.pkg.tooling, 0)}</dd>
+      <dt>技术文件包</dt><dd>${Object.entries(r.pkg.docs).filter(([k]) => ["rfq", "plan", "inspection", "dfx"].includes(k)).map(([k, u]) => `<a href="${u}" target="_blank">${esc(r.pkg.names[k])}</a>`).join(" · ")}</dd>` : ""}
+    ${!r.pkg && r.ref_total ? `<dt>平台参考成本</dt><dd>德国 ${eur(r.ref_total.DE, 0)} · 中国 ${eur(r.ref_total.CN, 0)}（出厂制造成本，<a href="demo.html?case=${r.caseId}" target="_blank">查看仿真与成本分析</a>）</dd>` : ""}
     ${r.note ? `<dt>备注</dt><dd>${esc(r.note).replace(/\n/g, "<br>")}</dd>` : ""}</dl></div>`;
 }
 

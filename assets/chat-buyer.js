@@ -127,51 +127,76 @@ async function aiReconstruct(caseId) {
   askSpec();
 }
 
-// real AI modelling through the ClearFab backend (only when the page is served by it and a key is configured)
-const API = new URL("../api/", location.href).href;
+// real AI modelling through the ClearFab backend: same origin when the page is served by it, otherwise the
+// public backend (Tailscale Funnel on the office PC). ?api=<url> overrides and is remembered in this browser.
+const PUBLIC_API = "https://wuhaoyang.tail9d7bae.ts.net:8443/api/";
+const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+const qsApi = new URLSearchParams(location.search).get("api");
+if (qsApi) ls.set("cf_api", qsApi);
+const API = ls.get("cf_api") || (location.hostname.endsWith("github.io") ? PUBLIC_API : new URL("../api/", location.href).href);
+const apiUrl = (p) => new URL(p, API).href;
 let aiState = null;
 async function aiAvailable() {
   if (aiState === null) {
-    try { const r = await fetch(API + "ai/status"); aiState = r.ok && (await r.json()).available; } catch { aiState = false; }
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 5000);
+    try { const r = await fetch(API + "ai/status", { signal: ctl.signal }); aiState = r.ok ? await r.json() : false; } catch { aiState = false; }
+    clearTimeout(t);
   }
-  return aiState;
+  return aiState && aiState.available;
+}
+
+function askCode() {
+  return new Promise((resolve) => {
+    const m = say(`AI 识图建模目前是<b>内测</b>，请输入邀请码：<div class="chips"><input type="text" id="aiCode" placeholder="邀请码" style="width:160px"> <button class="chip-btn" id="aiCodeOk">确定</button> <button class="chip-btn" id="aiCodeNo">没有邀请码</button></div>`);
+    $("#aiCodeOk", m).onclick = () => { const v = $("#aiCode", m).value.trim(); if (v) { ls.set("cf_code", v); m.remove(); resolve(v); } };
+    $("#aiCodeNo", m).onclick = () => { m.remove(); resolve(null); };
+  });
 }
 
 async function aiModel(f) {
+  let code = ls.get("cf_code") || "";
+  if (aiState.need_code && !code) {
+    code = await askCode();
+    if (!code) return drawingOnly("图纸");
+  }
   const m = say(`<b>AI 识图建模</b><ul class="steps-ai"><li class="run">上传图纸</li></ul><span class="small muted">通常 30–90 秒</span>`);
-  const ul = $("ul", m);
-  const tick = ["Claude 读取视图和尺寸", "生成参数化建模代码", "OpenCascade 建模、导出 STEP"];
-  let k = 0;
-  const timer = setInterval(() => {
-    if (k >= tick.length) return;
-    ul.lastElementChild.className = "done";
-    const li = document.createElement("li"); li.className = "run"; li.textContent = tick[k++]; ul.appendChild(li);
-  }, 9000);
+  const ul = $("ul", m), step = (t) => { ul.lastElementChild.className = "done"; const li = document.createElement("li"); li.className = "run"; li.textContent = t; ul.appendChild(li); };
   const fd = new FormData(); fd.append("file", f); fd.append("note", st.note || "");
   try {
-    const r = await fetch(API + "ai/model", { method: "POST", body: fd });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || r.status);
-    clearInterval(timer); ul.querySelectorAll("li").forEach((li) => li.className = "done");
+    const r = await fetch(API + "ai/model", { method: "POST", body: fd, headers: code ? { "X-Access-Code": code } : {} });
+    const j = await r.json();
+    if (r.status === 401) { ls.set("cf_code", ""); m.remove(); return aiModel(f); }
+    if (!r.ok) throw new Error(j.detail || r.status);
+    const tick = ["Claude 读取视图和尺寸", "生成参数化建模代码", "OpenCascade 建模、导出 STEP"];
+    let d, k = 0, t0 = Date.now(), queued = false;
+    for (;;) {
+      await new Promise((ok) => setTimeout(ok, 2500));
+      d = await (await fetch(apiUrl(j.poll))).json();
+      if (d.status === "queued" && !queued && d.ahead > 0) { queued = true; step(`排队中（前面 ${d.ahead} 个任务）`); }
+      if (d.status === "running" && k < tick.length && Date.now() - t0 > k * 9000) step(tick[k++]);
+      if (d.status === "done" || d.status === "error" || !d.status) break;
+      if (Date.now() - t0 > 6 * 60e3) throw new Error("超时");
+    }
+    if (d.status !== "done") throw new Error(d.error || d.detail || "未知错误");
+    ul.querySelectorAll("li").forEach((li) => li.className = "done");
     const sp = d.spec;
-    st.geo = new STLLoader().parse(await (await fetch(new URL(d.stl, location.href))).arrayBuffer());
-    st.info = measure(st.geo); st.step = new URL(d.step, location.href).href; st.stl = new URL(d.stl, location.href).href;
+    st.geo = new STLLoader().parse(await (await fetch(apiUrl(d.stl))).arrayBuffer());
+    st.info = measure(st.geo); st.step = apiUrl(d.step); st.stl = apiUrl(d.stl);
     st.preset = { material: MATERIAL_OPTS.find((x) => sp.material_hint && x.includes(sp.material_hint.replace(/[^0-9A-Za-z]/g, "").slice(0, 4))) || null, qty: sp.quantity_hint || null };
     const list = (t, a) => a && a.length ? `<h3>${t}</h3><ul class="list">${a.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
     const m2 = say("");
     showModel(m2, `<b>${esc(sp.name || "零件")}</b>：${esc(sp.summary || "")} <span class="tag ${sp.confidence === "high" ? "ok" : "warn"}">置信度 ${esc(sp.confidence || "?")}</span> <a href="${st.step}" download>下载 STEP</a>`);
     m2.insertAdjacentHTML("beforeend", list("尺寸", sp.dimensions) + list("特征", sp.features) + list("AI 自行假设的尺寸（请核对）", sp.assumptions)
-      + `<p class="small muted">建模尝试 ${d.attempts} 次。请核对形状和尺寸；不对的地方直接在下面输入框告诉我，或重新上传更清楚的图。</p>`);
+      + `<p class="small muted">建模尝试 ${d.attempts} 次，用时 ${Math.round((d.finished - d.started) || 0)} 秒。请核对形状和尺寸；不对的地方直接在下面输入框告诉我，或重新上传更清楚的图。</p>`);
     askSpec();
   } catch (e) {
-    clearInterval(timer);
     m.innerHTML = `AI 建模没有成功：${esc(e.message)}`;
     drawingOnly("图纸");
   }
 }
 
 function drawingOnly(kind) {
-  const m = say(`收到你的${kind}。<br><span class="proto">内测</span> AI 读图生成 3D 数模的功能正在内测，这个公开演示站还不能处理你自己的图纸；正式版大约 1 分钟出数模。<br>现在你可以：
+  const m = say(`收到你的${kind}。<br><span class="proto">内测</span> AI 读图生成 3D 数模正在内测（需要邀请码，服务也可能暂时离线），大约 1 分钟出数模。<br>现在你可以：
     <div class="chips"><button class="chip-btn" data-a="go">直接按图纸询价（供应商按图报价）</button><button class="chip-btn" data-a="3d">改传 3D 文件</button><button class="chip-btn" data-a="demo">用示例草图体验 AI 建模</button></div>`);
   m.querySelectorAll("[data-a]").forEach((b) => b.onclick = async () => {
     if (b.dataset.a === "go") askSpec();

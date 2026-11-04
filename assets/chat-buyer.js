@@ -134,7 +134,7 @@ const PUBLIC_API = "https://wuhaoyang.tail9d7bae.ts.net:8443/api/";
 const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 const qsApi = new URLSearchParams(location.search).get("api");
 if (qsApi) ls.set("cf_api", qsApi);
-const API = ls.get("cf_api") || (location.hostname.endsWith("github.io") ? PUBLIC_API : new URL("../api/", location.href).href);
+const API = ls.get("cf_api") || ((location.hostname.endsWith("github.io") || location.hostname === "clearfab.lumovate.de") ? PUBLIC_API : new URL("../api/", location.href).href);
 const apiUrl = (p) => new URL(p, API).href;
 let aiState = null;
 async function aiAvailable() {

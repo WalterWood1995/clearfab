@@ -43,6 +43,7 @@ export async function ensurePart(st, api, headers) {
   const r = await fetch(api + "ai/part", { method: "POST", body: fd, headers });
   const d = await r.json();
   if (!r.ok) throw new Error(d.detail || r.status);
+  st.partKey = d.key;
   return (st.partId = d.id);
 }
 
@@ -50,7 +51,7 @@ export async function runReview({ st, api, apiUrl, headers, say, req, meta }) {
   const m = say(`<b>工程评审</b><ul class="steps-ai"><li class="run">上传零件</li></ul><span class="small muted">仿真和成本几秒钟；AI 制造经理评审约 30–60 秒</span>`);
   const ul = m.querySelector("ul"), step = (t) => { ul.lastElementChild.className = "done"; const li = document.createElement("li"); li.className = "run"; li.textContent = t; ul.appendChild(li); };
   const part = await ensurePart(st, api, headers);
-  const r = await fetch(api + "ai/analyze", { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ part, req, meta }) });
+  const r = await fetch(api + "ai/analyze", { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ part, key: st.partKey, req, meta }) });
   const j = await r.json();
   if (!r.ok) throw new Error(j.detail || r.status);
   const ticks = ["有限元仿真 (FEA)", "可制造性分析：装夹、倒扣、壁厚", "全部工艺路线的成本与产量经济性", "AI 制造经理 DFx 评审", "生成文件包"];

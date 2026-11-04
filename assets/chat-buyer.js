@@ -181,7 +181,7 @@ async function aiModel(f) {
     const j = await r.json();
     if (r.status === 401) { ls.set("cf_code", ""); m.remove(); return aiModel(f); }
     if (!r.ok) throw new Error(j.detail || r.status);
-    st.partId = j.id;
+    st.partId = j.id; st.partKey = j.key;   // the part key: needed to read or analyze this part later
     const tick = ["Claude 读取视图和尺寸", "生成参数化建模代码", "OpenCascade 建模、导出 STEP"];
     let d, k = 0, t0 = Date.now(), queued = false;
     for (;;) {

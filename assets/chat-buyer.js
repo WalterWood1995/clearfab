@@ -130,7 +130,7 @@ async function aiReconstruct(caseId) {
 
 // real AI modelling through the ClearFab backend: same origin when the page is served by it, otherwise the
 // public backend (Tailscale Funnel on the office PC). ?api=<url> overrides and is remembered in this browser.
-const PUBLIC_API = "https://wuhaoyang.tail9d7bae.ts.net:8443/api/";
+const PUBLIC_API = "https://desktop-d8rmar1.tail9d7bae.ts.net:8443/api/";
 const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 const qsApi = new URLSearchParams(location.search).get("api");
 if (qsApi) ls.set("cf_api", qsApi);
